@@ -1,22 +1,38 @@
 #include "aoi/aoi.hpp"
-#define LOCAL_URL "http://localhost:5000/items"
-#define SAMPLE_URL "https://jsonplaceholder.typicode.com/posts"
+#include "aoi/aoimotion.hpp"
+#include "declarations/declarations.hpp"
+#include "motion/motion_engine.hpp"
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/StreamCopier.h>
+#include <Poco/URI.h>
+#include <chrono>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <uv.h>
 
-int main(int argc, char **argv){ unused
+#define SAMPLE_URL "https://jsonplaceholder.typicode.com/users"
 
-    setenv("UV_THREADPOOL_SIZE", "30", 1); // or use your local env.
+s32 main(int argc, char **argv) {
 
-    aoibuilder b = {
-        AOINET::_GET,
-        DEFAULT_HEADERS,
-        "",
-        true
+  (void)argc;
+  (void)argv;
 
-    };
+  aoibuilder b = DEFAULT_BUILDER;
 
-    std::vector<str> urls(100, SAMPLE_URL);
-    std::vector<aoibuilder> builders(100, b);    
-    aoi::perform_as_batch(urls, builders);
-    return 0;
-
+  motion *loop = uv_default_loop();
+  aoi::async_perform(SAMPLE_URL, DEFAULT_BUILDER, [](aoihttp result) {
+    std::cout << result.responseStream << "\n";
+  });
+  aoi::async_perform(
+      SAMPLE_URL, DEFAULT_BUILDER,
+      then(aoihttp r) { std::cout << r.responseStream << "\n"; });
+  uv_run(loop, UV_RUN_DEFAULT);
+  uv_loop_close(loop);
+  return 0;
 }

@@ -1,154 +1,167 @@
-#include <Poco/Net/HTTPSStreamFactory.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPSClientSession.h>
-#include <Poco/StreamCopier.h>
-#include <Poco/URI.h>
-#include <uv.h>
-#include <vector>
-#include <memory>
-#include <iostream>
-#include <optional>
-#include <string>
-#include <array>
-#include <assert.h>
 #include "../declarations/declarations.hpp"
 #include "aoimotion.hpp"
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/HTTPSStreamFactory.h>
+#include <Poco/StreamCopier.h>
+#include <Poco/URI.h>
+#include <array>
+#include <assert.h>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <uv.h>
+#include <vector>
 
+/// @brief class to wrap the callbacks used when working with
+/// libuv. This class should not be instantiated.
+/// the callbacks for the async executions are denoted:
+/// callback_(function_name)(engine* req, s32 status)
+/// engine* is an alias for uv_work_t*
+class aoicallback {
+public:
+  aoicallback() {}
+  ~aoicallback() {}
 
+  /// @brief callback to the perform_async method. It sets the callback
+  /// of the request after it's done, if any. After this it deletes the
+  /// aoidata* request
+  static void callback_perform_async(engine *req, s32 status) {
+    aoidata *request = static_cast<aoidata *>(req->data);
+    if (status < 0) {
+      std::cerr << "Error in [callback_perform_async]" << "\n";
+      delete request;
+    }
+    if (request->callback) {
+      request->callback(request->response);
+    }
+    delete request;
+  }
+};
+
+/// @brief A class to wrap methods to perform blocking
+/// and non-blocking http requests.
 class aoi {
 
-    private:
+private:
+  /// @brief Set the headers to the request.
+  /// @param req a reference to Poco::Net::HTTPRequest
+  /// @param headers an vector of pairs of std::string
+  static void set_headers(Poco::Net::HTTPRequest &req,
+                          std::vector<aoiheaders> headers) {
 
-        static void set_headers(Poco::Net::HTTPRequest& req, std::vector<aoiheaders> headers){
-            
-            for(const auto& h : headers){
-                req.set(h.first, h.second);
-            }
-        }
-
-    public:
-
-        static bool status_ok(u16 status) {
-            return status >= 200 && status <= 299;
-        }
-
-        static aoihttp get(str url, aoibuilder builder = { AOINET::_GET, DEFAULT_HEADERS, "", true}) {
-            try {
-
-                Poco::URI uri(url);
-                std::unique_ptr<Poco::Net::HTTPClientSession> session;
-                if(builder.useSSL){
-                    session = std::make_unique<Poco::Net::HTTPSClientSession>(uri.getHost(), uri.getPort());
-                } else {
-                    session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(), uri.getPort());
-                }
-
-                Poco::Net::HTTPRequest request(AOINET::_GET, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-                request.set("Host", uri.getHost());
-                set_headers(request, builder.headers);                
-                session->sendRequest(request);
-                Poco::Net::HTTPResponse response;
-                std::istream& rs = session->receiveResponse(response);
-                str responseText;
-                Poco::StreamCopier::copyToString(rs, responseText);
-                aoihttp r = {response, responseText};
-                return r;
-
-            } catch (const Poco::Exception& e) {
-                std::cerr << "Exception: " << e.displayText() << '\n';
-                return aoihttp{};
-            }
-        }
-
-        static aoihttp perform(str url, aoibuilder builder = { AOINET::_GET, DEFAULT_HEADERS, "", true}) {
-            try {
-            Poco::URI uri(url);
-            std::unique_ptr<Poco::Net::HTTPClientSession> session;
-            if(builder.useSSL){
-                session = std::make_unique<Poco::Net::HTTPSClientSession>(uri.getHost(), uri.getPort());
-            } else {
-                session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(), uri.getPort());
-            }
-
-            Poco::Net::HTTPRequest request(builder.METHOD, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-            request.set("Host", uri.getHost());
-            set_headers(request, builder.headers);
-            
-            if (builder.METHOD == AOINET::_POST || builder.METHOD == AOINET::_PUT) {
-                if (!builder.body.empty()) {
-                    std::ostream& os = session->sendRequest(request);
-                    os << builder.body;
-                }
-            }
-            
-            session->sendRequest(request);
-            std::ostringstream oss;
-            Poco::Net::HTTPResponse response;
-            std::istream& rs = session->receiveResponse(response);
-            str responseText;
-            Poco::StreamCopier::copyToString(rs, responseText);
-            aoihttp r = {response, responseText};
-            return r;
-
-        } catch (const Poco::Exception& e) {
-            std::cerr << "Exception: " << e.displayText() << '\n';
-            return aoihttp{};
-        }
+    for (const auto &h : headers) {
+      req.set(h.first, h.second);
     }
+  }
 
-    static void perform_async(engine* req){
-        MotionRequest *request = (MotionRequest*)req->data;
-        aoibuilder b = {
-            request->METHOD,
-            request->headers,
-            request->body,
-            request->useSSL
-        };
+public:
+  /// @brief checks the status code of the request.
+  /// @param status unsigned integer that holds the http status code.
+  /// @return true if the status is in the range [200, 299]
+  static bool status_ok(u16 status) { return (status - 200) < 100; }
 
-        request->result = perform(request->url, b);
-    }
-    static void perform_async_callback(engine* req, i32 status){
-        MotionRequest *response = (MotionRequest *)req->data;
-        if (status < 0) {
-            fprintf(stderr, "Error in worker thread: %s\n", uv_strerror(status));
-        } else {
-            printf("Returned: %d\n", response->result.get_status());
+  /// @brief This method performs a blocking request.
+  /// @param url the url desired
+  /// @param builder the HTTP/Client configuration structure
+  /// @return returns an aoihttp structure.
+  static aoihttp perform(str url,
+                         aoibuilder builder = {AOINET::_GET, DEFAULT_HEADERS,
+                                               "", true}) {
+    try {
+      Poco::URI uri(url);
+      std::unique_ptr<Poco::Net::HTTPClientSession> session;
+      if (builder.useSSL) {
+        session = std::make_unique<Poco::Net::HTTPSClientSession>(
+            uri.getHost(), uri.getPort());
+      } else {
+        session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
+                                                                 uri.getPort());
+      }
+
+      Poco::Net::HTTPRequest request(builder.METHOD, uri.getPathAndQuery(),
+                                     Poco::Net::HTTPMessage::HTTP_1_1);
+      request.set("Host", uri.getHost());
+      set_headers(request, builder.headers);
+
+      if (builder.METHOD == AOINET::_POST || builder.METHOD == AOINET::_PUT) {
+        if (!builder.body.empty()) {
+          std::ostream &os = session->sendRequest(request);
+          os << builder.body;
         }
-        free(response);
-    
+      }
+
+      session->sendRequest(request);
+      std::ostringstream oss;
+      Poco::Net::HTTPResponse response;
+      std::istream &rs = session->receiveResponse(response);
+      str responseText;
+      Poco::StreamCopier::copyToString(rs, responseText);
+      aoihttp r = {response, responseText};
+      return r;
+
+    } catch (const Poco::Exception &e) {
+      std::cerr << "Exception: " << e.displayText() << '\n';
+      return aoihttp{};
     }
-    static std::vector<aoihttp> perform_as_batch(std::vector<str> urls, std::vector<aoibuilder> builders){
+  }
+  /// @brief Performs an async / non-blocking request.
+  /// @param url the desired url
+  /// @param builder the HTTP/Client configuration structure
+  /// @param callback a callback to be called after the request is done.
+  static void async_perform(
+      str url, aoibuilder builder = {AOINET::_GET, DEFAULT_HEADERS, "", true},
+      std::function<void(aoihttp)> callback = [](aoihttp h) { (void)h; }) {
+    aoidata *data = new aoidata{url, builder, {}, {}, callback};
+    data->worker.data = data;
+    uv_queue_work(uv_default_loop(), &data->worker, aoi::async_perform_engine,
+                  aoicallback::callback_perform_async);
+  }
 
-        lu32 len = builders.size();
-        if(urls.size() != builders.size()){
-            throw std::runtime_error("The urls and builder should have the same size.");
+private:
+  /// @brief Performs an async request, this method is private and
+  /// is used internally to operate with libuv uv_work_t. Use
+  /// aoi::async_perform instead.
+  /// @param worker engine* is a alias for uv_work_t *
+  static void async_perform_engine(engine *worker) {
+    aoidata *data = static_cast<aoidata *>(worker->data);
+    try {
+
+      Poco::URI uri(data->url);
+      std::unique_ptr<Poco::Net::HTTPClientSession> session;
+      if (data->builder.useSSL) {
+        session = std::make_unique<Poco::Net::HTTPSClientSession>(
+            uri.getHost(), uri.getPort());
+      } else {
+        session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
+                                                                 uri.getPort());
+      }
+
+      Poco::Net::HTTPRequest request(data->builder.METHOD,
+                                     uri.getPathAndQuery(),
+                                     Poco::Net::HTTPMessage::HTTP_1_1);
+      request.set("Host", uri.getHost());
+      aoi::set_headers(request, data->builder.headers);
+      if (data->builder.METHOD == AOINET::_POST ||
+          data->builder.METHOD == AOINET::_PUT) {
+        if (!data->builder.body.empty()) {
+          std::ostream &os = session->sendRequest(request);
+          os << data->builder.body;
         }
-        motion *loop = uv_default_loop();
-        std::vector<aoihttp> result;
-        result.reserve(len);
-        for(size_t k = 0; k < len; k++){
+      }
 
-            MotionRequest* req = new MotionRequest();
-            req->body.assign(builders[k].body);
-            req->id = k;
-            req->headers = builders[k].headers;
-            req->METHOD = builders[k].METHOD;
-            req->useSSL = builders[k].useSSL;            
-            req->worker.data = (void*)req;
-            req->url = urls.at(k);
-            result.push_back(req->result);
-            uv_queue_work(loop, &req->worker, perform_async, perform_async_callback);
+      session->sendRequest(request);
+      Poco::Net::HTTPResponse response;
+      std::istream &rs = session->receiveResponse(response);
+      str responseText;
+      Poco::StreamCopier::copyToString(rs, responseText);
+      data->response = {response, responseText};
 
-        }
-        
-        uv_run(loop, UV_RUN_DEFAULT);
-        uv_loop_close(loop);
-        return result;
-        
+    } catch (const Poco::Exception &e) {
+      std::cerr << "Exception: " << e.displayText() << "\n";
     }
-
-
-
+  }
 };
