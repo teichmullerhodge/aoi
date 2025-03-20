@@ -16,6 +16,7 @@ def get_item(item_id):
 
 @app.route("/items", methods=["POST"])
 def create_item():
+    print(request.data)
     data = request.json
     item_id = len(items) + 1
     items[item_id] = data

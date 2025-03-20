@@ -90,7 +90,6 @@ public:
           os << builder.body;
         }
       }
-
       session->sendRequest(request);
       std::ostringstream oss;
       Poco::Net::HTTPResponse response;
@@ -102,7 +101,9 @@ public:
 
     } catch (const Poco::Exception &e) {
       std::cerr << "Exception: " << e.displayText() << '\n';
-      return aoihttp{};
+      Poco::Net::HTTPResponse resp;
+      resp.setStatus("0"); // Ugly. But without this the return would be 200.
+      return aoihttp{resp, {}};
     }
   }
   /// @brief Performs an async / non-blocking request.
@@ -178,6 +179,9 @@ private:
 
     } catch (const Poco::Exception &e) {
       std::cerr << "Exception: " << e.displayText() << "\n";
+      Poco::Net::HTTPResponse resp;
+      resp.setStatus("0");
+      data->response = {resp, {}};
     }
   }
 
