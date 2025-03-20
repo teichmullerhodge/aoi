@@ -78,7 +78,7 @@ typedef struct {
 /// @brief the aoidata is a struct used to operate
 /// in the async methods on the aoiclass. It encodes
 /// the url of the requests, the aoibuilder
-/// the aoihttp response, the worker and a callback
+/// the aoihttp response, the engine worker and a callback
 /// to be used when the function is finished.
 typedef struct {
 

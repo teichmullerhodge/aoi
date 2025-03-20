@@ -13,6 +13,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <uv.h>
 
@@ -22,16 +23,21 @@ s32 main(int argc, char **argv) {
 
   (void)argc;
   (void)argv;
-
-  aoibuilder b = DEFAULT_BUILDER;
+  setenv("UV_THREADPOOL_SIZE", "70", 1);
 
   motion *loop = uv_default_loop();
-  aoi::async_perform(SAMPLE_URL, DEFAULT_BUILDER, [](aoihttp result) {
-    std::cout << result.responseStream << "\n";
-  });
+
+  /// async call example
   aoi::async_perform(
       SAMPLE_URL, DEFAULT_BUILDER,
-      then(aoihttp r) { std::cout << r.responseStream << "\n"; });
+      then(aoihttp h) { std::cout << h.responseStream << "\n"; });
+
+  /// sync call example
+  auto response = aoi::perform(SAMPLE_URL);
+
+  std::cout << response.responseStream << "\n";
+  std::cout << response.get_status() << "\n";
+
   uv_run(loop, UV_RUN_DEFAULT);
   uv_loop_close(loop);
   return 0;

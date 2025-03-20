@@ -7,11 +7,8 @@
 #include <Poco/Net/HTTPSStreamFactory.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/URI.h>
-#include <array>
-#include <assert.h>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <string>
 #include <uv.h>
 #include <vector>
@@ -121,6 +118,25 @@ public:
                   aoicallback::callback_perform_async);
   }
 
+  /// @brief Makes multiples requests in a batch in a non-blocking way
+  /// @param urls a vector of urls
+  /// @param builders a vector of builders
+  /// @param callbacks a vector of callbacks
+  /// @param loop a motion* that is defined as uv_default_loop()
+  static void
+  async_perform_all(std::vector<str> urls, std::vector<aoibuilder> builders,
+                    std::vector<std::function<void(aoihttp)>> callbacks,
+                    motion *loop = uv_default_loop()) {
+    lu32 len = builders.size();
+
+    if (urls.size() != len) {
+      throw std::runtime_error("Urls len and builders len should be equal.");
+    }
+    for (lu32 k = 0; k < len; k++) {
+      async_perform_with_motion_loop(urls[k], builders[k], callbacks[k], loop);
+    }
+  }
+
 private:
   /// @brief Performs an async request, this method is private and
   /// is used internally to operate with libuv uv_work_t. Use
@@ -163,5 +179,20 @@ private:
     } catch (const Poco::Exception &e) {
       std::cerr << "Exception: " << e.displayText() << "\n";
     }
+  }
+
+  /// @brief Used in the async_perform_all method, is the same method.
+  /// as async_perform but with am extra argument to provide the motion loop.
+  /// @param url the desired url
+  /// @param builder the HTTP/Client configuration structure
+  /// @param callback a callback to be called after the request is done.
+  static void async_perform_with_motion_loop(
+      str url, aoibuilder builder = {AOINET::_GET, DEFAULT_HEADERS, "", true},
+      std::function<void(aoihttp)> callback = [](aoihttp h) { (void)h; },
+      motion *loop = uv_default_loop()) {
+    aoidata *data = new aoidata{url, builder, {}, {}, callback};
+    data->worker.data = data;
+    uv_queue_work(loop, &data->worker, aoi::async_perform_engine,
+                  aoicallback::callback_perform_async);
   }
 };
