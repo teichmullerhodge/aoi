@@ -83,14 +83,20 @@ public:
                                      Poco::Net::HTTPMessage::HTTP_1_1);
       request.set("Host", uri.getHost());
       set_headers(request, builder.headers);
-
-      if (builder.METHOD == AOINET::_POST || builder.METHOD == AOINET::_PUT) {
+      bool requestSend = false;
+      if (builder.METHOD == AOINET::_POST || builder.METHOD == AOINET::_PUT ||
+          builder.METHOD == AOINET::_PATCH) {
+        request.setContentLength(builder.body.length());
         if (!builder.body.empty()) {
           std::ostream &os = session->sendRequest(request);
           os << builder.body;
+          requestSend = true;
         }
       }
-      session->sendRequest(request);
+      if (!requestSend) {
+
+        session->sendRequest(request);
+      }
       std::ostringstream oss;
       Poco::Net::HTTPResponse response;
       std::istream &rs = session->receiveResponse(response);
@@ -162,15 +168,21 @@ private:
                                      Poco::Net::HTTPMessage::HTTP_1_1);
       request.set("Host", uri.getHost());
       aoi::set_headers(request, data->builder.headers);
+      bool requestSend = false;
       if (data->builder.METHOD == AOINET::_POST ||
-          data->builder.METHOD == AOINET::_PUT) {
+          data->builder.METHOD == AOINET::_PUT ||
+          data->builder.METHOD == AOINET::_PATCH) {
+        request.setContentLength(data->builder.body.length());
         if (!data->builder.body.empty()) {
           std::ostream &os = session->sendRequest(request);
           os << data->builder.body;
+          requestSend = true;
         }
       }
+      if (!requestSend) {
 
-      session->sendRequest(request);
+        session->sendRequest(request);
+      }
       Poco::Net::HTTPResponse response;
       std::istream &rs = session->receiveResponse(response);
       str responseText;
