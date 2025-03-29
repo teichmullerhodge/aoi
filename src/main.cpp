@@ -1,20 +1,7 @@
 #include "aoi/aoi.hpp"
 #include "aoi/aoimotion.hpp"
 #include "declarations/declarations.hpp"
-#include "motion/motion_engine.hpp"
-#include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/StreamCopier.h>
-#include <Poco/URI.h>
-#include <chrono>
-#include <functional>
 #include <iostream>
-#include <memory>
-#include <sstream>
-#include <string>
-#include <thread>
-#include <utility>
 #include <uv.h>
 
 #define SAMPLE_URL "https://jsonplaceholder.typicode.com/users"
